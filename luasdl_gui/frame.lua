@@ -11,6 +11,8 @@ end
 
 local ret, err = ttf.init()
 
+local Frames = {}
+
 if not ret then
   error(err)
 end
@@ -618,6 +620,7 @@ function CreateFrame(Type, Window, Layer)
 	assert(Window, "Argument #2 Window, missing")
 	assert(Window.Layer[Layer], "Invalid layer")
 	local Frame = {width=0,height=0,x=0,y=0,Type=Type}
+	Frames[Frame] = {}
 	if Queue then Frame.Queue = Queue end
 	--Populate Hidden events and common functions--
 	HiddenWEvents[Frame] = {}
