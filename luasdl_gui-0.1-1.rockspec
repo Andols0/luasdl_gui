@@ -21,5 +21,5 @@ build = {
 dependencies = {
 	"lua >= 5.1",
     "luasocket",
-    "https://github.com/Andols0/luasdl2/commits/master/lua-sdl2-scm-3.rockspec",
+    "https://github.com/Andols0/luasdl2/commits/master/lua-sdl2-scm-3.rockspec"
 }
