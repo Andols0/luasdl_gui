@@ -67,55 +67,56 @@ end
 
 ActiveVideos = {}
 
+local VideoFunctions = {}
 asd = 0
-local function Start(self)
+function VideoFunctions.Start(self)
 	ActiveVideos[self] = self
 	print("Starting video")
-	if not self.loaded then
+	if not self._loaded then
 		self:Load()
 	end
-	if not self.started then
+	if not self._started then
 		asd=asd+1
 		print(string.format("Starting video for the: %d time",asd))
 		self:Show()
-		self.started=true
+		self._started=true
 		AddToQueue(0,self.GetFrame,self)
 		--table.insert(self.Queue,1,{t=0,cb=self.GetFrame,args=self})
 	end
 end
 local function OneAudioCycle(self)
 	print("next")
-	self.Audio.Dev:pause(true)
+	self._Audio.Dev:pause(true)
 end
 
-local function Stop(self)
+function VideoFunctions.Stop(self)
 	ActiveVideos[self] = nil
-	self.NextStop = true
-	if self.Audio.Dev then
+	self._NextStop = true
+	if self._Audio.Dev then
 		print(#self.Queue)
 		AddToQueue(socket.gettime()+1, OneAudioCycle,self)
 		--table.insert(self.Queue,2,{t=socket.gettime()+1,cb=OneAudioCycle,args = self})
 	end
 	--self.texture=nil
-	self.Stream:close()
-	self.Paused = false
+	self._Stream:close()
+	self._Paused = false
 	self:Hide()
 	self:Reload()
 	
 end
 
-local function Pause(self)
-	self.Paused = true
-	if self.Audio.Dev then
-		self.Audio.Dev:pause(true)
+function VideoFunctions.Pause(self)
+	self._Paused = true
+	if self._Audio.Dev then
+		self._Audio.Dev:pause(true)
 	end
 end
 
-local function Resume(self)
+function VideoFunctions.Resume(self)
 	local now = socket.gettime()
-	self.Paused = false
-	self.Resuming = true
-	self.Starttime = now - (self.currentframe*self.frametime)
+	self._Paused = false
+	self._Resuming = true
+	self._Starttime = now - (self._currentframe*self._frametime)
 	--AddToQueue(now,self.GetFrame,self)
 	--table.insert(self.Queue,{t=now,cb=self.GetFrame,args=self})
 	--if self.Audio.Dev then
@@ -123,25 +124,29 @@ local function Resume(self)
 	--end
 end
 
-local function GetFrame(self)
-	local err, Data
-	if self.NextStop or self.Paused then self.NextStop = false return end--Stop it
+function VideoFunctions.GetDuration(self)
+	return self._duration
+end
 
-	if self.currentframe == 0 then
-		self.resuming = true
-		self.Starttime = socket.gettime()
-		if self.Audio.Dev then
-			self.Audio.Dev:pause(false)
+function VideoFunctions.GetFrame(self)
+	local err, Data
+	if self._NextStop or self._Paused then self._NextStop = false return end--Stop it
+
+	if self._currentframe == 0 then
+		self._resuming = true
+		self._Starttime = socket.gettime()
+		if self._Audio.Dev then
+			self._Audio.Dev:pause(false)
 		end
 	end
-	self.currentframe = self.currentframe + 1
+	self._currentframe = self._currentframe + 1
 	--if self.currentframe % 100 == 0 then
 		--print("Video memory: ",collectgarbage("count"))
 	--end
-	if self.currentframe <= self.numframes then
-		if self.currentframe > self.framerate+1 and math.floor(self.currentframe*self.frametime) % 20 == 0 then
+	if self._currentframe <= self._numframes then
+		if self._currentframe > self._framerate+1 and math.floor(self._currentframe*self._frametime) % 20 == 0 then
 			if not(send) then
-				self.Audio.Channel:push({"Time",self.currentframe*self.frametime})
+				self._Audio.Channel:push({"Time",self._currentframe*self._frametime})
 				print("Video memory: ",collectgarbage("count")/1024)
 				send = true
 			end
@@ -150,13 +155,14 @@ local function GetFrame(self)
 		end
 
 		--print("VidTime",math.floor(self.currentframe*self.frametime*100)/100)
-		Data = self.Stream:read(self.framesize)
+		Data = self._Stream:read(self._framesize)
 		if Data then 
-			self.texture:lock(Data,self.pitch)
-			self.texture:unlock()
+			self._Win.update = true
+			self._texture:lock(Data,self._pitch)
+			self._texture:unlock()
 		end
 	else
-		local extradata = self.Stream:read(self.framesize)
+		local extradata = self._Stream:read(self._framesize)
 		if extradata then
 			print("Extra data",#extradata)
 		else
@@ -165,47 +171,48 @@ local function GetFrame(self)
 
 		ActiveVideos[self]=nil
 		self:Hide()
-		self.Stream:close()
-		if self.Audio.Dev then
+		self._Stream:close()
+		if self._Audio.Dev then
 			--AddToQueue(self.Queue,socket.gettime()+1,self.AudioDev.close,self.AudioDev)
 			print("Stopping audio")
-			self.Audio.Dev:pause(true)
+			self._Audio.Dev:pause(true)
 		end
 		return AddToQueue(socket.gettime()+1,self.Reload,self)
 	end
 	--self:Pause()
-	if self.Resuming then
-		if self.Audio.Dev then
-			self.Audio.Dev:pause(false)
+	if self._Resuming then
+		if self._Audio.Dev then
+			self._Audio.Dev:pause(false)
 		end
-		self.Resuming = false
+		self._Resuming = false
 	end
-	local Nextframe = self.Starttime + (self.currentframe+1)*(1/self.framerate)
+	local Nextframe = self._Starttime + (self._currentframe+1)*(1/self._framerate)
 	return AddToQueue(Nextframe,self.GetFrame,self)
 end
 
-local function Load(self)
-	if not(self.loaded) then
-		self.Stream  = io.popen('ffmpeg -i "'..self.filepath..'" -c:v rawvideo -pix_fmt yuv420p -f rawvideo pipe:1 -loglevel warning',"rb")
-		self.loaded = true
-		self.Audio = CreateAudio(self.audiopath,self.Sample,self.Channels)
+function VideoFunctions.Load(self)
+	if not(self._loaded) then
+		self._Stream  = io.popen('ffmpeg -i "'..self._filepath..'" -c:v rawvideo -pix_fmt yuv420p -f rawvideo pipe:1 -loglevel warning',"rb")
+		self._loaded = true
+		self._Audio = CreateAudio(self._audiopath,self._Sample,self._Channels)
 		--Prepare Texture
-		self.texture, err = self.Win.Rdr:createTexture(SDL.pixelFormat.IYUV,SDL.textureAccess.Streaming,self.texwidth,self.texheight)
-		if not self.texture then
+		self._Win.update = true
+		self._texture, err = self._Win.Rdr:createTexture(SDL.pixelFormat.IYUV,SDL.textureAccess.Streaming,self._texwidth,self._texheight)
+		if not self._texture then
 			error(err)
 		end
 	end
 end
 
-local function Reload(self)
+function VideoFunctions.Reload(self)
 --if true then return end
 	print("Reloading")
-	self.Stream  = io.popen('ffmpeg -i "'..self.filepath..'" -c:v rawvideo -pix_fmt yuv420p -f rawvideo pipe:1 -loglevel warning',"rb")
+	self._Stream  = io.popen('ffmpeg -i "'..self._filepath..'" -c:v rawvideo -pix_fmt yuv420p -f rawvideo pipe:1 -loglevel warning',"rb")
 	print("Got stream")
-	self.Audio.Channel:push("Restart")
+	self._Audio.Channel:push("Restart")
 	print("Got audio")
-	self.currentframe=0
-	self.started = false
+	self._currentframe=0
+	self._started = false
 end
 
 local function PrepareVideo(channel,self,filepath,audiopath)
@@ -213,28 +220,28 @@ local function PrepareVideo(channel,self,filepath,audiopath)
 	assert(filepath, "Filepath missing")
 	local Video = self
 	function Video:Load()
-		self.WaitLoad = true
+		self._WaitLoad = true
 	end
 	function Video:Start()
-		self.WaitStart = true
+		self._WaitStart = true
 	end
-	local rdr = self.Win.Rdr
-	channel:push({filepath, audiopath})
+	local rdr = self._Win.Rdr
+	channel:push({filepath, audiopath}) --Get video meta
 	local Data = coroutine.yield()
 	for k,v in pairs(Data) do
-		Video[k] = v
+		Video["_"..k] = v
 	end
-	if Video.height == 0 then
-		Video.height = Video.texheight
+	if Video._height == 0 then
+		Video._height = Video._texheight
 	end
-	if Video.width == 0 then
-		Video.width = Video.texwidth
+	if Video._width == 0 then
+		Video._width = Video._texwidth
 	end
 	--Open Audio--
 	audiopath = audiopath or filepath
-	Video.filepath = filepath
-	Video.audiopath = audiopath
-	print("Video.Sample",Video.Sample, Video.Channels)
+	Video._filepath = filepath
+	Video._audiopath = audiopath
+	print("Video.Sample",Video._Sample, Video._Channels)
 	--Video.Audio = CreateAudio(audiopath,Video.Sample,Video.Channels)
 	--Prepare Texture
 	--Video.texture, err = rdr:createTexture(SDL.pixelFormat.IYUV,SDL.textureAccess.Streaming,Video.texwidth,Video.texheight)
@@ -244,23 +251,20 @@ local function PrepareVideo(channel,self,filepath,audiopath)
 	--Open video stream
 	--Video.Stream  = io.popen('ffmpeg -i "'..filepath..'" -c:v rawvideo -pix_fmt yuv420p -f rawvideo pipe:1 -loglevel warning',"rb")
 	--Set stuff
-	Video.currentframe=0
-	Video.pitch = tonumber(Video.texwidth*1.5)
-	Video.framesize = Video.pitch*Video.texheight
-	Video.GetFrame = GetFrame
-	Video.Start = Start
-	Video.Stop = Stop
-	Video.Pause = Pause
-	Video.Resume = Resume
-	Video.Reload  = Reload
-	Video.Load = Load
+	Video._currentframe=0
+	Video._pitch = tonumber(Video._texwidth*1.5)
+	Video._framesize = Video._pitch*Video._texheight
+	for k,v in pairs(VideoFunctions) do
+		Video[k] = v
+	end
+
 	Video:UpdatePos()
-	if Video.WaitLoad and not Video.WaitStart then
-		Video.WaitLoad=nil
+	if Video._WaitLoad and not Video._WaitStart then
+		Video._WaitLoad=nil
 		Video:Load()
 	end
-	if Video.WaitStart then
-		Video.WaitStart=nil
+	if Video._WaitStart then
+		Video._WaitStart=nil
 		Video:Load()
 		Video:Start()
 	end

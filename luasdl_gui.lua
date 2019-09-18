@@ -1,8 +1,7 @@
-print("start",...)
 require("socket")
 local SDL	= require "SDL"
 local Audio = require("luasdl_gui.audio")
-require("luasdl_gui.frame")
+local Frames = require("luasdl_gui.frame")
 local floor = math.floor
 Queue = {}
 ----Locals
@@ -22,6 +21,14 @@ local ret, err = SDL.init( {
 
 if not ret then
 	error(err)
+end
+
+--Debug function
+function pt(t)
+	print("Printing table:",t)
+	for k,v in pairs(t) do
+		print(k,v)
+	end
 end
 
 function CheckFile(filepath,notblock)
@@ -57,6 +64,7 @@ function CreateWindow(WindowSettings)
 	Window.Rdr:setDrawColor(Window.BgColor)
 	Window.Rdr:setDrawBlendMode(SDL.blendMode.Blend)
 	Window.SetBGColor = SetBGColor
+	Window.update = true
 	Windows[Window.Win:getID()]=Window
 	return Window
 end
@@ -80,11 +88,11 @@ function AddToQueue(Time,Callback,...)
 end
 
 function CreateCallback(Name,fu,f,cr,...)
-	if f and cr then error("Argument 3 or 4 needs to be nil") end
-	local path
-	print(type(fu))
-	if not Threads[Name] then
-		if type(fu) == "nil" then
+	--f and cr is the function or coroutine that is supposed to be 
+	if f and cr then error("Argument 3 or can't both be true") end --One already created coroutine or a function to create one
+	local path --Path (function or filepath) to the thread that is supposed to be created
+	if not Threads[Name] then --Is this type of thread loaded?
+		if type(fu) == "nil" then	--If there is no function look for a file (used?)
 			if CheckFile(Name..".lua",true) then
 				path = Name..".lua"
 			elseif CheckFile(Name.."/"..Name..".lua") then
@@ -92,19 +100,18 @@ function CreateCallback(Name,fu,f,cr,...)
 			else
 				error("File does not exist")
 			end
-		elseif type(fu) == "function" then
+		elseif type(fu) == "function" then --If there is a function add that
 			path = fu
 		else
 			error("File or function not found") 
 		end
-		Threads[Name] = {
+		Threads[Name] = { --Create the thread and channel
 			t = SDL.createThread(Name,path),
 			co = SDL.getChannel(Name.."out"),
 			ci = SDL.getChannel(Name.."in")
 		}
-		print(Threads[Name].t)
 	end
-	Threads[Name].ci:push("wip")
+	Threads[Name].ci:push("wip") --Can the PR fix this shit?
 	local Channel = Threads[Name].co
 	local Callbacks = Async.Callbacks
 	if not Callbacks[Name] then Callbacks[Name] = {} end
@@ -122,8 +129,8 @@ local mouseisover
 local function CheckFrames(Layer,x,y)
 	for i=#Layer, 1 ,-1 do
 		Frame = Layer[i]
-		if Frame.MouseEnabled and Frame.shown then
-			if (Frame.x<=x and Frame.y<=y) and (Frame.x+Frame.width >= x and Frame.y+Frame.height >= y) then
+		if Frame._MouseEnabled and Frame._shown then
+			if (Frame._x<=x and Frame._y<=y) and (Frame._x+Frame._width >= x and Frame._y+Frame._height >= y) then
 				if mouseisover~=Frame then
 					if mouseisover then
 						PushEvent("OnLeave",mouseisover)
@@ -155,13 +162,27 @@ local function IsMouseOVer(Win,x,y)
 	end
 end
 
+local function Place(Rdr,v)
+	if v._shown == true then
+		if v._Draw then
+			Rdr:setDrawColor(v._color)
+			Rdr[v._Draw](Rdr,v._obj)
+		elseif v._crop then
+			Rdr:copy(v._texture,{w = v._crop.w, h=v._crop.h, x= v._crop.x, y = v._crop.y},{w = v._width, h= v._height, x = v._x, y = v._y})
+		else
+			Rdr:copy(v._texture,nil,{w = v._width, h= v._height, x = v._x, y = v._y})
+		end
+	end
+end
 
 local function Render(Win)
 	local Rdr = Win.Rdr
 	Rdr:setDrawColor(Win.BgColor)
 	Rdr:clear()
 	for k,v in pairs(Win.Layer.BACKGROUND) do
-		if v.shown == true then
+		Place(Rdr,v)
+		--Place(v) Remove the rest when i got the frameshit working again
+		--[[if v._shown == true then
 			if v.Draw then
 				Rdr:setDrawColor(v.color)
 				Rdr[v.Draw](Rdr,v.obj)
@@ -170,10 +191,11 @@ local function Render(Win)
 			else
 				Rdr:copy(v.texture,nil,{w = v.width, h= v.height, x = v.x, y = v.y})
 			end
-		end
+		end]]
 	end
 	for k,v in pairs(Win.Layer.LOW) do
-		if v.shown == true then
+		Place(Rdr,v)
+		--[[if v.shown == true then
 			if v.Draw then
 				Rdr:setDrawColor(v.color)
 				Rdr[v.Draw](Rdr,v.obj)
@@ -182,10 +204,11 @@ local function Render(Win)
 			else
 				Rdr:copy(v.texture,nil,{w = v.width, h= v.height, x = v.x, y = v.y})
 			end
-		end
+		end]]
 	end
 	for k,v in pairs(Win.Layer.MEDIUM) do
-		if v.shown == true then
+		Place(Rdr,v)
+		--[[if v.shown == true then
 			if v.Draw then
 				Rdr:setDrawColor(v.color)
 				Rdr[v.Draw](Rdr,v.obj)
@@ -194,10 +217,11 @@ local function Render(Win)
 			else
 				Rdr:copy(v.texture,nil,{w = v.width, h= v.height, x = v.x, y = v.y})
 			end
-		end
+		end]]
 	end
 	for k,v in pairs(Win.Layer.HIGH) do
-		if v.shown == true then
+		Place(Rdr,v)
+		--[[if v.shown == true then
 			if v.Draw then
 				Rdr:setDrawColor(v.color)
 				Rdr[v.Draw](Rdr,v.obj)
@@ -206,7 +230,7 @@ local function Render(Win)
 			else
 				Rdr:copy(v.texture,nil,{w = v.width, h= v.height, x = v.x, y = v.y})
 			end
-		end
+		end]]
 	end
 	Rdr:present()
 end
@@ -330,6 +354,7 @@ local function HandleAsync()
 		local resp = Channel:first()
 		if resp and resp~="wip" then
 			Channel:pop()
+			print(N)
 			local a= v[1](resp)
 			tremove(v,1)
 			if #v == 0 then
@@ -395,7 +420,10 @@ function Main()
 		tinsert(Timetable.Queue,tid4-tid3-0.01)
 
 		for _,Win in pairs(Windows) do
-			Render(Win)
+			if Win.update then
+				Render(Win)
+				Win.update = false
+			end
 		end
 
 		tinsert(Timetable.Render,socket.gettime()-tid4)

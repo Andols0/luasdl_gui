@@ -1,4 +1,3 @@
-print("frame ... ",...)
 local image = require("SDL.image")
 local ttf = require("SDL.ttf")
 local PrepareVideo = require("luasdl_gui.video")
@@ -10,12 +9,16 @@ if not formats[image.flags.PNG] then
 end
 
 local ret, err = ttf.init()
-
-local Frames = {}
-
 if not ret then
-  error(err)
-end
+	error(err)
+  end
+
+
+local Frames = setmetatable({},{__mode = "k"})
+local Typetable = setmetatable({},{__mode = "k"})
+
+
+
 local CommonFunctions, CommonWEvents = {}, {}
 local FrameFunctions = {}
 local ButtonFunctions, ButtonWEvents = {}, {}
@@ -43,9 +46,9 @@ local function GetParentData(Parent)
 	local point = Data.point
 	local Basex = Data.Basex or 0
 	local Basey = Data.Basey or 0
-	local width = Parent.width
-	local height = Parent.height
-	local x, y = Parent.x, Parent.y
+	local width = Parent._width
+	local height = Parent._height
+	local x, y = Parent._x, Parent._y
 	if point == "TOPLEFT" then --Set base x and y depending on the anchor point
 		--Is already the correct
 	elseif point == "TOP" then
@@ -77,8 +80,8 @@ local function GetParentData(Parent)
 end
 
 local function UpdatePoint(self)
-	local width = self.width or 0
-	local height = self.height or 0
+	local width = self._width or 0
+	local height = self._height or 0
 	local Data = pointData[self]
 	local point = Data.point
 	local Rpoint = Data.relativePoint
@@ -118,7 +121,7 @@ local function UpdatePoint(self)
 	if Data.relativeTo then --Set base depending on the parent
 		Px, Py, Pw, Ph = GetParentData(Data.relativeTo)
 	else
-		Px, Py, Pw, Ph = 0, 0, self.Win.Win:getSize()
+		Px, Py, Pw, Ph = 0, 0, self._Win.Win:getSize()
 	end
 	if Rpoint == "TOPLEFT" then --Set base x and y depending on the anchor point
 		Data.Basex = Data.Basex + Px
@@ -150,8 +153,8 @@ local function UpdatePoint(self)
 	else
 		error("Invalid relativeTo point")
 	end
-	self.x = Data.Basex+ofsx
-	self.y = Data.Basey+ofsy
+	self._x = Data.Basex+ofsx
+	self._y = Data.Basey+ofsy
 	for _,v in pairs(Children[self]) do
 		UpdatePoint(v)
 	end
@@ -178,15 +181,16 @@ function PushChar(char)
 end
 -------------Common functions-----------------
 function CommonFunctions.SetSize(self, width, height)
-	self.width = width
-	self.height = height
+	self._width = width
+	self._height = height
 	if pointData[self].point then
 		UpdatePoint(self)
 	end
 end
 
 function CommonFunctions.SetAlpha(self,alpha)
-	self.texture:setAlphaMod(alpha*255)
+	self._Win.update = true
+	self._texture:setAlphaMod(alpha*255)
 end
 
 function CommonFunctions.SetPoint(self, point, arg1, arg2, arg3, arg4)
@@ -234,13 +238,13 @@ function CommonFunctions.SetPoint(self, point, arg1, arg2, arg3, arg4)
 	pointData[self].relativeTo = relativeTo
 	pointData[self].relativePoint = relativePoint or point
 	UpdatePoint(self)
-	return self.x, self.y
+	return self._x, self._y
 end
 
 function ShowChildren(kids)
 	for _,v in pairs(kids) do
-		if v.Pshow and not(v.shown) then
-			v.shown = true
+		if v._Pshow and not(v._shown) then
+			v._shown = true
 			PushEvent("OnShow",v)
 		end
 		if Children[v] then
@@ -251,8 +255,8 @@ end
 
 function HideChildren(kids)
 	for _,v in pairs(kids) do
-		if v.Pshow and v.shown then
-			v.shown = false
+		if v._Pshow and v._shown then
+			v._shown = false
 			PushEvent("OnHide",v)
 		end
 		if Children[v] then
@@ -262,8 +266,8 @@ function HideChildren(kids)
 end
 
 function CommonFunctions.Show(self)
-	self.shown = true
-	self.Pshow = true
+	self._shown = true
+	self._Pshow = true
 	PushEvent("OnShow",self)
 	if Children[self] then
 		ShowChildren(Children[self])
@@ -271,8 +275,8 @@ function CommonFunctions.Show(self)
 end
 
 function CommonFunctions.Hide(self)
-	self.shown = false
-	self.Pshow = false
+	self._shown = false
+	self._Pshow = false
 	PushEvent("OnHide",self)
 	if Children[self] then
 		HideChildren(Children[self])
@@ -280,7 +284,7 @@ function CommonFunctions.Hide(self)
 end
 
 function CommonFunctions.EnableMouse(self,status)
-	self.MouseEnabled = status
+	self._MouseEnabled = status
 end
 
 function CommonFunctions.SetScript(self, Event, Callback)
@@ -322,46 +326,48 @@ end
 
 function DrawSquareFunctions.SetPoint(self,...)
 	CommonFunctions.SetPoint(self,...)
-	self.obj.x = self.x
-	self.obj.y = self.y
+	self._obj.x = self._x
+	self._obj.y = self._y
 end
 
 function DrawSquareFunctions.SetSize(self,...)
 	CommonFunctions.SetSize(self,...)
-	self.obj.w = self.width
-	self.obj.h = self.height
-	self.obj.x = self.x
-	self.obj.y = self.y
+	self._obj.w = self._width
+	self._obj.h = self._height
+	self._obj.x = self._x
+	self._obj.y = self._y
 end
 
 function DrawSquareFunctions.SetColor(self,color,g,b,a)
 	if g then
 		a=a or 255
-		self.color = {r = color, g = g, b = b, a = a}
+		self._color = {r = color, g = g, b = b, a = a}
 	else
 		if not color.a then color.a=255 end
-		self.color = color
+		self._color = color
 	end
 end
 
 function DrawSquareFunctions.Filled(self, status)
 	if status == true then
-		self.Draw = "fillRect"
+		self._Draw = "fillRect"
 	else
-		self.Draw = "drawRect"
+		self._Draw = "drawRect"
 	end
 end
 
 ------------Frame functions--------------
 function FrameFunctions.SetTexture(self,texturePath)
 	CheckFile(texturePath)
-	self.texture, err = LoadImage(self.Win.Rdr,texturePath)
+	self._Win.update = true
+	self._texture, err = LoadImage(self._Win.Rdr,texturePath)
 end
 ------------Button Widget Events---------
 function ButtonWEvents.OnClick(self,...)
 	local PushedTexture = ButtonTextures[self].PushedTexture
 	if PushedTexture then
-		self.texture = PushedTexture
+		self._Win.update = true
+		self._texture = PushedTexture
 	end
 	if UserWEvents[self].OnClick then
 		return UserWEvents[self].OnClick(self,...)
@@ -371,7 +377,8 @@ end
 function ButtonWEvents.OnEnter(self,...)--Overwrite common
 	local HighlightTexture = ButtonTextures[self].HighlightTexture
 	if HighlightTexture then
-		self.texture = HighlightTexture
+		self._Win.update = true
+		self._texture = HighlightTexture
 	end
 	if UserWEvents[self].OnEnter then
 		return UserWEvents[self].OnEnter(self,...)
@@ -381,7 +388,8 @@ end
 function ButtonWEvents.OnLeave(self,...)--Overwrite common
 	local NormalTexture = ButtonTextures[self].NormalTexture
 	if NormalTexture then
-		self.texture = NormalTexture
+		self._Win.update = true
+		self._texture = NormalTexture
 	end
 	if UserWEvents[self].OnLeave then
 		return UserWEvents[self].OnLeave(self,...)
@@ -392,56 +400,66 @@ end
 
 function ButtonFunctions.SetNormalTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].NormalTexture = LoadImage(self.Win.Rdr,texturePath)
-	self.texture = ButtonTextures[self].NormalTexture
+	ButtonTextures[self].NormalTexture = LoadImage(self._Win.Rdr,texturePath)
+	self._Win.update = true
+	self._texture = ButtonTextures[self].NormalTexture
 end
 
 function ButtonFunctions.SetPushedTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].PushedTexture = LoadImage(self.Win.Rdr,texturePath)
+	ButtonTextures[self].PushedTexture = LoadImage(self._Win.Rdr,texturePath)
 end
 
 function ButtonFunctions.SetHighlightTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].HighlightTexture = LoadImage(self.Win.Rdr,texturePath)
+	ButtonTextures[self].HighlightTexture = LoadImage(self._Win.Rdr,texturePath)
 end
 
 function ButtonFunctions.SetDisabledTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].DisabledTexture = LoadImage(self.Win.Rdr,texturePath)
+	ButtonTextures[self].DisabledTexture = LoadImage(self._Win.Rdr,texturePath)
 end
 
 function ButtonFunctions.SetText(self,text)
-	if not(self.Text) then
-		self.Text = CreateFrame("Text",self.Win, self.Layer)
-		self.Text:SetPoint("CENTER",self,"CENTER")
-		self.Text:SetText(text)
-		self.Text:Show()
+	if not(self._Text) then
+		self._Text = CreateFrame("Text",self._Win, self._Layer)
+		self._Text:SetPoint("CENTER",self,"CENTER")
+		self._Text:SetText(text)
+		self._Text:Show()
 	else
-		self.Text:SetText(text)
+		self._Text:SetText(text)
 	end
+end
+
+function ButtonFunctions.SetTextSize(self,...)
+	self._Text:SetSize(...)
+end
+
+function ButtonFunctions.SetTextPoint(self,...)
+	self._Text:SetPoint(...)
 end
 -----------Font functions---------------
 
 local function UpdateFont(self)
-	self.Fonttext = self.Fonttext or " "
-	if self.Fonttext == "" then self.Fonttext = " " end
-	local fw, fh = self.Font:sizeUtf8(self.Fonttext)
-	local surface = self.Font:renderUtf8(self.Fonttext,"blended",self.Fontcolor)
-	self.texture = self.Win.Rdr:createTextureFromSurface(surface)
-	if not(self.crop) then
-		self.width, self.height = fw, fh
+	self._Fonttext = self._Fonttext or " "
+	if self._Fonttext == "" then self._Fonttext = " " end
+	local fw, fh = self._Font:sizeUtf8(self._Fonttext)
+	local surface = self._Font:renderUtf8(self._Fonttext,"blended",self._Fontcolor)
+	self._Win.update = true
+	self._texture = self._Win.Rdr:createTextureFromSurface(surface)
+	if not(self._crop) then
+		self._width, self._height = fw, fh
 	else
-		local Crop = self.crop
+		local Crop = self._crop
 		if Crop.w < fw then
-			self.width = Crop.w
+			self._width = Crop.w
 		else
-			self.width = fw
+			self._width = fw
 		end
 		if Crop.h < fh then
-			self.height = Crop.h
+			self._height = Crop.h
 		else
-			self.height = fh
+			self._height = fh
 		end
 	end
 	if pointData[self] then
@@ -450,22 +468,22 @@ local function UpdateFont(self)
 end
 
 local function RemakeFont(self)
-	self.Font = ttf.open(self.Fonttype,self.Fontsize)
+	self.Font = ttf.open(self._Fonttype,self._Fontsize)
 	return UpdateFont(self)
 end
 
 function FontFunctions.SetFont(self,Type)
-	self.Fonttype = Type
+	self._Fonttype = Type
 	return RemakeFont(self)
 end
 
 function FontFunctions.SetColor(self,color,g,b,a)
 	if g then
 		a = a or 255
-		self.Fontcolor = {r = color, g = g, b = b,a = a}
+		self._Fontcolor = {r = color, g = g, b = b,a = a}
 	else
 		if type(color)=="table" and not color.a then color.a=255 end
-		self.Fontcolor = color
+		self._Fontcolor = color
 	end
 	UpdateFont(self)
 end
@@ -473,21 +491,21 @@ end
 function FontFunctions.SetSize(self, size,x,y)
 	self.Fontsize = size
 	if x and y then
-		self.crop = {x=0, y=0, w=x,h=y}
+		self._crop = {x=0, y=0, w=x,h=y}
 	else
-		self.crop=nil
+		self._crop=nil
 	end
 	RemakeFont(self)
 end
 
 function FontFunctions.SetText(self,text)
-	self.Fonttext = text
+	self._Fonttext = text
 	UpdateFont(self)
 	--UpdatePoint(self)
 end
 
 function FontFunctions.GetText(self)
-	return self.Fonttext
+	return self._Fonttext
 end
 -----------Edit Box-------
 -------Events-------------
@@ -502,21 +520,21 @@ end
 --TODO add changing mousepointer when mousing over
 -------Functions----------
 local function InitText(self,Window,Layer)
-	self.Text = CreateFrame("Text",Window,Layer)
-	self.Text:SetText("")
-	self.Text:Show()
+	self._Text = CreateFrame("Text",Window,Layer)
+	self._Text:SetText("")
+	self._Text:Show()
 end
 
 function EditBoxFunctions.SetText(self,text)
-	self.Text:SetText(text)
+	self._Text:SetText(text)
 end
 
 function EditBoxFunctions.SetInputFilter(self,filter)
-	self.InputFilter = filter
+	self._InputFilter = filter
 end
 
 function EditBoxFunctions.SetTextFormat(self,filter)
-	self.TextFormat = filter
+	self._TextFormat = filter
 end
 
 function EditBoxFunctions.GetText(self)
@@ -524,51 +542,52 @@ function EditBoxFunctions.GetText(self)
 end
 
 function EditBoxFunctions.SetSize(self, width, height)
-	self.width = width
-	self.height = height
+	self._width = width
+	self._height = height
 	if pointData[self].point then
 		UpdatePoint(self)
 	end
-	self.Text.crop = {x = 0, y = 0, w = width, h = height}
+	self._Text.crop = {x = 0, y = 0, w = width, h = height}
 end
 
 function EditBoxFunctions.SetTextSize(self,size)
-	self.Text:SetSize(size,self.width,self.height)
+	self._Text:SetSize(size,self._width,self._height)
 end
 
 function EditBoxFunctions.SetPoint(self,point,...)
 	local x, y = CommonFunctions.SetPoint(self,point,...)
-	self.Text:SetPoint("LEFT",self,"LEFT", 1)
+	self._Text:SetPoint("LEFT",self,"LEFT", 1)
 end
 
 function EditBoxFunctions.SetTexture(self, imgpath)
 	CheckFile(imgpath)
-	self.texture = LoadImage(self.Win.Rdr,imgpath)
+	self._Win.update = true
+	self._texture = LoadImage(self._Win.Rdr,imgpath)
 end
 
 function EditBoxFunctions.SetText(self,text)
-	self.String = tostring(text)
-	self.Text:SetText(text)
+	self._String = tostring(text)
+	self._Text:SetText(text)
 end
 
 function EditBoxFunctions.SetTranslate(self,A,B)
-	self.ChangeChar = self.ChangeChar or {}
-	self.ChangeChar[A] = B
+	self._ChangeChar = self._ChangeChar or {}
+	self._ChangeChar[A] = B
 end
 
 function EditBoxFunctions.AddLetter(self,Char)
-	if self.ChangeChar then
-		if self.ChangeChar[Char] then
-			Char = self.ChangeChar[Char]
+	if self._ChangeChar then
+		if self._ChangeChar[Char] then
+			Char = self._ChangeChar[Char]
 		end
 	end
-	if self.InputFilter and not(Char:match("("..self.InputFilter..")")) then
+	if self._InputFilter and not(Char:match("("..self._InputFilter..")")) then
 		return
 	end
 
-	local newstring = self.String..tostring(Char)
-	if self.TextFormat then
-		local usefull, trash = newstring:match("^("..self.TextFormat..")(.*)")
+	local newstring = self._String..tostring(Char)
+	if self._TextFormat then
+		local usefull, trash = newstring:match("^("..self._TextFormat..")(.*)")
 		print(newstring,usefull, trash)
 		if not(usefull) or trash~="" then
 			return
@@ -579,8 +598,8 @@ function EditBoxFunctions.AddLetter(self,Char)
 		self.String = self.String:sub(1,self.Pos)..Char..self.String:sub(self.Pos+1)
 
 	else]]
-		self.String = newstring
-		self.Text:SetText(self.String)
+		self._String = newstring
+		self._Text:SetText(self._String)
 	--end
 end
 
@@ -602,25 +621,70 @@ local function NumSub(Text)
 end
 
 function EditBoxFunctions.Backspace(self)
-	local Len = self.String:len()
+	local Len = self._String:len()
 	local Sub = 1
 	if Len >= 2 then
-		Sub = NumSub(self.String:sub(-4))
+		Sub = NumSub(self._String:sub(-4))
 	end
-	self.String = self.String:sub(1,Len-Sub)
-	if self.String:len() == 0 then
-		self.String = ""
+	self._String = self._String:sub(1,Len-Sub)
+	if self._String:len() == 0 then
+		self._String = ""
 	end
-	self.Text:SetText(self.String)
+	self._Text:SetText(self._String)
 end
+
+local Framemeta = {}
+function Framemeta:__tostring()
+	return Typetable[self]
+end
+
+function Framemeta:__newindex(key,value)
+	if key:sub(1,2)=="_" then
+		Frames[self][key] = value
+	else
+		rawset(self,key,value)
+	end
+end
+
+local Ignore ={
+	_crop = true,
+	_shown = true,
+	_Text= true,
+	_ChangeChar= true,
+	_Draw= true,
+	_Pshow= true,
+	_texheight = true,
+	_texwidth = true,
+	_width = true,
+}
+
+function Framemeta:__index(key)
+	if key:sub(1,2) == "_" then
+		return Frames[self][key]
+	else
+		if not(Ignore[key]) then
+			--error("Key: "..key)
+		end
+		return nil
+	end
+end
+
+local Types = {Frame = true, Button = true, Video = true, Text = true, EditBox = true, Square = true}
 
 -----------"Public"-------
 function CreateFrame(Type, Window, Layer)
 	assert(Type,"Argument #1 missing")
+	assert(Types[Type],"Invalid typen in #1")
 	assert(Window, "Argument #2 Window, missing")
 	assert(Window.Layer[Layer], "Invalid layer")
-	local Frame = {width=0,height=0,x=0,y=0,Type=Type}
-	Frames[Frame] = {}
+	local Frame = setmetatable({},Framemeta)
+	Frame._width = 0
+	Frame._height = 0
+	Frame._x = 0
+	Frame._y = 0
+	Frame._Type = Type
+	Frame._MouseEnabled = false
+	Typetable[Frame] = Type
 	if Queue then Frame.Queue = Queue end
 	--Populate Hidden events and common functions--
 	HiddenWEvents[Frame] = {}
@@ -631,16 +695,16 @@ function CreateFrame(Type, Window, Layer)
 		Frame[k]=v
 	end
 	--Put in the window
-	Frame.Layer = Layer
-	Frame.Win = Window
-	table.insert(Frame.Win.Layer[Frame.Layer],Frame)
+	Frame._Layer = Layer
+	Frame._Win = Window
+	table.insert(Frame._Win.Layer[Frame._Layer],Frame)
 	----Frame specific stuff
 	if Type == "Frame" then
 		for k,v in pairs(FrameFunctions) do
 			Frame[k] = v
 		end
 	elseif Type == "Button" then
-			Frame.MouseEnabled = true
+			Frame._MouseEnabled = true
 		for k,v in pairs(ButtonFunctions) do
 			Frame[k]=v
 		end
@@ -648,22 +712,22 @@ function CreateFrame(Type, Window, Layer)
 			HiddenWEvents[Frame][k] = v
 		end
 		ButtonTextures[Frame] = {}
-	elseif Type == "Video" then
+	elseif Type == "Video" then	
 		Frame.UpdatePos = UpdatePoint
 		Frame.Preload = PrepareVideo
 	elseif Type == "Text" then
-		Frame.Fonttype = "Fonts/DejaVuSans.ttf"
-		Frame.Fontsize = 10
-		Frame.Fontcolour = 0x000000
-		Frame.Fonttext = " "
-		Frame.Font = ttf.open("Fonts/DejaVuSans.ttf",10)
+		Frame._Fonttype = "Fonts/DejaVuSans.ttf"
+		Frame._Fontsize = 10
+		Frame._Fontcolor = 0x000000
+		Frame._Fonttext = " "
+		Frame._Font = ttf.open(Frame._Fonttype,10)
 		for k,v in pairs(FontFunctions) do
 			Frame[k] =v
 		end
 		UpdateFont(Frame)
 	elseif Type == "EditBox" then
-		Frame.MouseEnabled = true
-		Frame.String = ""
+		Frame._MouseEnabled = true
+		Frame._String = ""
 		for k,v in pairs(EditBoxFunctions) do
 			Frame[k] =v
 		end
@@ -673,9 +737,9 @@ function CreateFrame(Type, Window, Layer)
 		Frame:SetTexture("Textures/EditBox.png")
 		InitText(Frame, Window, Layer)
 	elseif Type == "Square" then
-		Frame.Draw = "drawRect"
-		Frame.color = 0x000000FF
-		Frame.obj = { w = 0, h = 0, x = 0, y = 0}
+		Frame._Draw = "drawRect"
+		Frame._color = 0x000000FF
+		Frame._obj = { w = 0, h = 0, x = 0, y = 0}
 		for k,v in pairs(DrawSquareFunctions) do
 			Frame[k] = v
 		end
@@ -686,7 +750,8 @@ function CreateFrame(Type, Window, Layer)
 	pointData[Frame] = {point="CENTER",ofsx=0,ofsy=0, relativePoint="CENTER"}
 	UpdatePoint(Frame)
 	UserWEvents[Frame] = {}
+	--print("CF",Frame)
 	return Frame
 end
 
-return Queue
+return Frames
