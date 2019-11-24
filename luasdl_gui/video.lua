@@ -197,7 +197,7 @@ function VideoFunctions.Load(self)
 		self._Audio = CreateAudio(self._audiopath,self._Sample,self._Channels)
 		--Prepare Texture
 		self._Win.update = true
-		self._texture, err = self._Win.Rdr:createTexture(SDL.pixelFormat.IYUV,SDL.textureAccess.Streaming,self._texwidth,self._texheight)
+		self._texture, err = self._Win._Rdr:createTexture(SDL.pixelFormat.IYUV,SDL.textureAccess.Streaming,self._texwidth,self._texheight)
 		if not self._texture then
 			error(err)
 		end

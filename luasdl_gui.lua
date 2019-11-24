@@ -7,6 +7,7 @@ Queue = {}
 ----Locals
 local tinsert, tremove = table.insert, table.remove
 local wrap = coroutine.wrap
+local CLOSE
 local Windows = {}
 
 local Async = {
@@ -46,28 +47,88 @@ function CheckFile(filepath,notblock)
 	return true
 end
 
-local function SetBGColor(self,color,g,b,a)
-	if g then
-		self.BgColor = {r = color, g=g,b=b,a=a}
-	else
-		self.BgColor = color
-	end
-	self.BgColor = color
+local WinInt = {}
+
+local WinMeta = {}
+function WinMeta:__tostring()
+	return "Window: "..self._Win:getID()
 end
 
+function WinMeta:__newindex(key,value)
+	if key:sub(1,1)=="_" then
+		WinInt[self][key] = value
+	else
+		rawset(self,key,value)
+	end
+end
+
+
+function WinMeta:__index(key)
+	if key:sub(1,1) == "_" then
+		return WinInt[self][key]
+	else
+		return nil
+	end
+end
+
+local WindowFunctions = {}
+
+function WindowFunctions.SetBGColor(self,color,g,b,a)
+	if g then
+		self._BgColor = {r = color, g=g,b=b,a=a}
+	else
+		self._BgColor = color
+	end
+	self._BgColor = color
+end
+
+function WindowFunctions.Hide(self)
+	self._Win:hide()
+	self._shown = false
+end
+
+function WindowFunctions.Show(self)
+	self._update = true
+	self._Win:show()
+	if self._shown then
+		self._Win:raise()
+	end
+	self._shown = true
+end
+
+function WindowFunctions.OnClose(self,f)
+	self._CloseF = f
+end
+
+function WindowFunctions.getSize(self)
+	return self._Win:getSize()
+end
+
+function WindowFunctions.GetMousePos(self)
+	return self._Mousex, self._Mousey
+end
+
+
 function CreateWindow(WindowSettings)
-	local Window = {}
-	Window.Win = SDL.createWindow(WindowSettings)
-	Window.Rdr = SDL.createRenderer(Window.Win, -1)
-	Window.Layer = {BACKGROUND = {}, LOW = {}, MEDIUM = {}, HIGH = {}}
-	Window.BgColor= 0x0a40e0
-	Window.Rdr:setDrawColor(Window.BgColor)
-	Window.Rdr:setDrawBlendMode(SDL.blendMode.Blend)
-	Window.SetBGColor = SetBGColor
-	Window.update = true
-	Windows[Window.Win:getID()]=Window
+	local Window = setmetatable({},WinMeta)
+	WinInt[Window] = {}
+	Window._Win = SDL.createWindow(WindowSettings)
+	Window._Rdr = SDL.createRenderer(Window._Win, -1)
+	Window._Layer = {BACKGROUND = {}, LOW = {}, MEDIUM = {}, HIGH = {}}
+	Window._BgColor= 0x0a40e0
+	Window._Rdr:setDrawColor(Window._BgColor)
+	Window._Rdr:setDrawBlendMode(SDL.blendMode.Blend)
+	Window._update = true
+	Window._shown = true
+	Window._CloseF = function() return end
+	Windows[Window._Win:getID()]=Window
+
+	for k,v in pairs(WindowFunctions) do
+		Window[k] = v
+	end
 	return Window
 end
+
 Threads = {}
 
 function AddToQueue(Time,Callback,...)
@@ -87,9 +148,20 @@ function AddToQueue(Time,Callback,...)
 	return
 end
 
+function OnIdle(f,cr)
+	if f and cr then error("Please supply one function OR a coruttine") end
+	local coro
+	if f then
+		coro = wrap(f)
+	else
+		coro = cr
+	end
+	table.insert(Async.CanWait,coro)
+end
+	
 function CreateCallback(Name,fu,f,cr,...)
 	--f and cr is the function or coroutine that is supposed to be 
-	if f and cr then error("Argument 3 or can't both be true") end --One already created coroutine or a function to create one
+	if f and cr then error("Argument 3 or 2 can't both be true") end --One already created coroutine or a function to create one
 	local path --Path (function or filepath) to the thread that is supposed to be created
 	if not Threads[Name] then --Is this type of thread loaded?
 		if type(fu) == "nil" then	--If there is no function look for a file (used?)
@@ -146,13 +218,20 @@ local function CheckFrames(Layer,x,y)
 end
 
 local function IsMouseOVer(Win,x,y)
-	if CheckFrames(Win.Layer.HIGH,x,y) then
+	if x == nil then
+		if mouseisover then
+			PushEvent("OnLeave",mouseisover)
+			mouseisover=nil
+		end
 		return
-	elseif CheckFrames(Win.Layer.MEDIUM,x,y) then
+	end
+	if CheckFrames(Win._Layer.HIGH,x,y) then
 		return
-	elseif CheckFrames(Win.Layer.LOW,x,y) then
+	elseif CheckFrames(Win._Layer.MEDIUM,x,y) then
 		return
-	elseif CheckFrames(Win.Layer.BACKGROUND,x,y) then
+	elseif CheckFrames(Win._Layer.LOW,x,y) then
+		return
+	elseif CheckFrames(Win._Layer.BACKGROUND,x,y) then
 		return
 	else
 		if mouseisover then
@@ -163,7 +242,7 @@ local function IsMouseOVer(Win,x,y)
 end
 
 local function Place(Rdr,v)
-	if v._shown == true then
+	if v._shown == true and (v._texture or v._Draw) then
 		if v._Draw then
 			Rdr:setDrawColor(v._color)
 			Rdr[v._Draw](Rdr,v._obj)
@@ -176,10 +255,10 @@ local function Place(Rdr,v)
 end
 
 local function Render(Win)
-	local Rdr = Win.Rdr
-	Rdr:setDrawColor(Win.BgColor)
+	local Rdr = Win._Rdr
+	Rdr:setDrawColor(Win._BgColor)
 	Rdr:clear()
-	for k,v in pairs(Win.Layer.BACKGROUND) do
+	for k,v in pairs(Win._Layer.BACKGROUND) do
 		Place(Rdr,v)
 		--Place(v) Remove the rest when i got the frameshit working again
 		--[[if v._shown == true then
@@ -193,7 +272,7 @@ local function Render(Win)
 			end
 		end]]
 	end
-	for k,v in pairs(Win.Layer.LOW) do
+	for k,v in pairs(Win._Layer.LOW) do
 		Place(Rdr,v)
 		--[[if v.shown == true then
 			if v.Draw then
@@ -206,7 +285,7 @@ local function Render(Win)
 			end
 		end]]
 	end
-	for k,v in pairs(Win.Layer.MEDIUM) do
+	for k,v in pairs(Win._Layer.MEDIUM) do
 		Place(Rdr,v)
 		--[[if v.shown == true then
 			if v.Draw then
@@ -219,7 +298,7 @@ local function Render(Win)
 			end
 		end]]
 	end
-	for k,v in pairs(Win.Layer.HIGH) do
+	for k,v in pairs(Win._Layer.HIGH) do
 		Place(Rdr,v)
 		--[[if v.shown == true then
 			if v.Draw then
@@ -247,7 +326,9 @@ end)
 local function ScreenEvents()
 	for e in SDL.pollEvent() do
 		if e.type == SDL.event.WindowEvent and e.event==SDL.eventWindow.Close then
-			print("Quit")
+			--Windows[e.windowID]:hide()
+			Windows[e.windowID]:_CloseF()
+			print("Hiding window:",e.windowID)
 			return false
 		elseif e.type == SDL.event.DropFile then
 			print("File dropped!!!")
@@ -286,8 +367,17 @@ local function ScreenEvents()
 			if mouseisover then
 				PushEvent("OnClick",mouseisover,Button)
 			end
+
+		elseif e.type == SDL.event.WindowEvent and e.event==SDL.eventWindow.Enter then
+
+		elseif e.type == SDL.event.WindowEvent and e.event==SDL.eventWindow.Leave then
+			IsMouseOVer(Windows[e.windowID],nil)
+			Windows[e.windowID]._Mousex = -math.huge
+			Windows[e.windowID]._Mousey = -math.huge
 		elseif e.type == SDL.event.MouseMotion then
 			--print(string.format("mouse motion: x=%d, y=%d on screen %d", e.x, e.y,e.windowID))
+			Windows[e.windowID]._Mousex = e.x
+			Windows[e.windowID]._Mousey = e.y
 			IsMouseOVer(Windows[e.windowID],e.x,e.y)
 		end
 	end
@@ -313,8 +403,8 @@ local function WorkQueue()
 	if Pos then
 		Diff = (Pos.t-Now)*1000
 		--print("Diff",math.floor(Diff))
-		if Diff > 10 then
-			SDL.delay(10)
+		if Diff > 1 then
+			SDL.delay(1)
 			return
 		end
 		if Diff<0 then
@@ -337,7 +427,7 @@ local function WorkQueue()
 			end
 		end
 	else
-		SDL.delay(10)
+		SDL.delay(1)
 	end
 
 end
@@ -364,10 +454,16 @@ local function HandleAsync()
 	end
 end
 local format = string.format
-Timetable = {Async = {}, Events = {}, Queue = {}, Render = {}}
+local realdelay = SDL.delay
+function SDL.delay(time)
+	table.insert(Timetable.Delaying,time/1000)
+	realdelay(time)
+end
+Timetable = {Start = socket.gettime(), Async = {}, Events = {}, Queue = {}, Render = {}, Delaying = {}}
 local tid, tid2, tid3, tid4
 
 function Quittime()
+	print(format("This sesson was %d seconds",socket.gettime()-Timetable.Start))
 	local Num=1
 	local tid = 0
 	Num=1
@@ -385,11 +481,15 @@ function Quittime()
 	print(format("Time spent in Event function %d seconds, with an average of %s ms",tid,floor(tid/Num*100000)/100))
 	tid = 0
 	Num = 1
+	local Delaytime = 0
+	for _,t in pairs(Timetable.Delaying) do
+		Delaytime = Delaytime + t
+	end
 	for i,t in pairs(Timetable.Queue) do
 		tid = tid + t
 		Num = i
 	end
-	print(format("Time spent in Queue function %d seconds, with an average of %s ms",tid,floor(tid/Num*100000)/100))
+	print(format("Time spent in Queue function %d seconds, with an average of %s ms",tid-Delaytime,floor((tid-Delaytime)/Num*100000)/100))
 	tid = 0
 	Num = 1
 	for i,t in pairs(Timetable.Render) do
@@ -400,6 +500,10 @@ function Quittime()
 end
 running = true
 
+function CloseApp()
+	CLOSE = true
+end
+
 function Main()
 	while running do  --The main looopppp
 		tid = socket.gettime()
@@ -409,7 +513,7 @@ function Main()
 		tid2= socket.gettime()
 		tinsert(Timetable.Async,tid2-tid)
 
-		running = ScreenEvents()
+		ScreenEvents()
 
 		tid3 = socket.gettime()
 		tinsert(Timetable.Events,tid3-tid2)
@@ -417,16 +521,22 @@ function Main()
 		WorkQueue()
 
 		tid4 = socket.gettime()
-		tinsert(Timetable.Queue,tid4-tid3-0.01)
-
+		tinsert(Timetable.Queue,tid4-tid3)
+		running = false
 		for _,Win in pairs(Windows) do
-			if Win.update then
+			if Win._update then
+				--print("Updating win:",_)
 				Render(Win)
-				Win.update = false
+				Win._update = false
+			end
+			if Win._shown then
+				running = true
 			end
 		end
-
 		tinsert(Timetable.Render,socket.gettime()-tid4)
+		if CLOSE then
+			break
+		end
 	end
 
 	print("Bye!!")

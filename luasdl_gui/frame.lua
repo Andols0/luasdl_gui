@@ -121,7 +121,7 @@ local function UpdatePoint(self)
 	if Data.relativeTo then --Set base depending on the parent
 		Px, Py, Pw, Ph = GetParentData(Data.relativeTo)
 	else
-		Px, Py, Pw, Ph = 0, 0, self._Win.Win:getSize()
+		Px, Py, Pw, Ph = 0, 0, self._Win:getSize()
 	end
 	if Rpoint == "TOPLEFT" then --Set base x and y depending on the anchor point
 		Data.Basex = Data.Basex + Px
@@ -183,19 +183,21 @@ end
 function CommonFunctions.SetSize(self, width, height)
 	self._width = width
 	self._height = height
+	self._Win._update = true
 	if pointData[self].point then
 		UpdatePoint(self)
 	end
 end
 
 function CommonFunctions.SetAlpha(self,alpha)
-	self._Win.update = true
+	self._Win._update = true
 	self._texture:setAlphaMod(alpha*255)
 end
 
 function CommonFunctions.SetPoint(self, point, arg1, arg2, arg3, arg4)
 	local relativeTo, relativePoint, ofsx, ofsy,x,y
 	local relto = pointData[self].relativeTo
+	self._Win._update = true
 	if type(tonumber(arg1))=="number" then
 		ofsx = tonumber(arg1) or 0
 		ofsy = tonumber(arg2) or 0
@@ -231,6 +233,13 @@ function CommonFunctions.SetPoint(self, point, arg1, arg2, arg3, arg4)
 				end
 			end
 		end
+		if relativeTo._shown and self._Pshow then
+			self._shown = true
+			ShowChildren(Children[self])
+		else
+			self._shown = false
+			HideChildren(Children[self])
+		end
 	end
 	pointData[self].point=point
 	pointData[self].ofsx=ofsx
@@ -247,7 +256,7 @@ function ShowChildren(kids)
 			v._shown = true
 			PushEvent("OnShow",v)
 		end
-		if Children[v] then
+		if Children[v] and v._Pshow then
 			ShowChildren(Children[v])
 		end
 	end
@@ -264,23 +273,36 @@ function HideChildren(kids)
 		end
 	end
 end
-
+-------------------Common functions---------------
 function CommonFunctions.Show(self)
-	self._shown = true
-	self._Pshow = true
-	PushEvent("OnShow",self)
-	if Children[self] then
-		ShowChildren(Children[self])
+	self._Win._update = true
+	self._Pshow = true --If parent is changed to shown show this frame.
+	--Show if there is no parent or if parent is shown
+	if not(pointData[self].relativeTo) or (pointData[self].relativeTo and pointData[self].relativeTo._shown) then
+		self._shown = true
+		PushEvent("OnShow",self)
+		if Children[self] then
+			ShowChildren(Children[self])
+		end
 	end
 end
 
 function CommonFunctions.Hide(self)
+	self._Win._update = true
 	self._shown = false
 	self._Pshow = false
 	PushEvent("OnHide",self)
 	if Children[self] then
 		HideChildren(Children[self])
 	end
+end
+
+function CommonFunctions.IsShown(self)
+	return self._Pshow == true
+end
+
+function CommonFunctions.IsVisible(self)
+	return self._shown == true
 end
 
 function CommonFunctions.EnableMouse(self,status)
@@ -292,6 +314,15 @@ function CommonFunctions.SetScript(self, Event, Callback)
 		UserWEvents[self][Event] = Callback
 	else
 		error("Invalid event")
+	end
+end
+
+function CommonFunctions.IsMouseOver(self)
+	local x, y = self._Win:GetMousePos()
+	if (self._x<=x and self._y<=y) and (self._x+self._width >= x and self._y+self._height >= y) then
+		return true
+	else
+		return false
 	end
 end
 ------------Common Widget Events---------
@@ -326,12 +357,14 @@ end
 
 function DrawSquareFunctions.SetPoint(self,...)
 	CommonFunctions.SetPoint(self,...)
+	self._Win._update = true
 	self._obj.x = self._x
 	self._obj.y = self._y
 end
 
 function DrawSquareFunctions.SetSize(self,...)
 	CommonFunctions.SetSize(self,...)
+	self._Win._update = true
 	self._obj.w = self._width
 	self._obj.h = self._height
 	self._obj.x = self._x
@@ -339,6 +372,7 @@ function DrawSquareFunctions.SetSize(self,...)
 end
 
 function DrawSquareFunctions.SetColor(self,color,g,b,a)
+	self._Win._update = true
 	if g then
 		a=a or 255
 		self._color = {r = color, g = g, b = b, a = a}
@@ -349,6 +383,7 @@ function DrawSquareFunctions.SetColor(self,color,g,b,a)
 end
 
 function DrawSquareFunctions.Filled(self, status)
+	self._Win._update = true
 	if status == true then
 		self._Draw = "fillRect"
 	else
@@ -359,14 +394,15 @@ end
 ------------Frame functions--------------
 function FrameFunctions.SetTexture(self,texturePath)
 	CheckFile(texturePath)
-	self._Win.update = true
-	self._texture, err = LoadImage(self._Win.Rdr,texturePath)
+	self._Win._update = true
+	self._texture, err = LoadImage(self._Win._Rdr,texturePath)
 end
+
 ------------Button Widget Events---------
 function ButtonWEvents.OnClick(self,...)
 	local PushedTexture = ButtonTextures[self].PushedTexture
 	if PushedTexture then
-		self._Win.update = true
+		self._Win._update = true
 		self._texture = PushedTexture
 	end
 	if UserWEvents[self].OnClick then
@@ -377,7 +413,7 @@ end
 function ButtonWEvents.OnEnter(self,...)--Overwrite common
 	local HighlightTexture = ButtonTextures[self].HighlightTexture
 	if HighlightTexture then
-		self._Win.update = true
+		self._Win._update = true
 		self._texture = HighlightTexture
 	end
 	if UserWEvents[self].OnEnter then
@@ -387,8 +423,8 @@ end
 
 function ButtonWEvents.OnLeave(self,...)--Overwrite common
 	local NormalTexture = ButtonTextures[self].NormalTexture
-	if NormalTexture then
-		self._Win.update = true
+	if NormalTexture and not(self._highlock) then
+		self._Win._update = true
 		self._texture = NormalTexture
 	end
 	if UserWEvents[self].OnLeave then
@@ -400,27 +436,48 @@ end
 
 function ButtonFunctions.SetNormalTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].NormalTexture = LoadImage(self._Win.Rdr,texturePath)
-	self._Win.update = true
+	ButtonTextures[self].NormalTexture = LoadImage(self._Win._Rdr,texturePath)
+	self._Win._update = true
 	self._texture = ButtonTextures[self].NormalTexture
 end
 
+
+
 function ButtonFunctions.SetPushedTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].PushedTexture = LoadImage(self._Win.Rdr,texturePath)
+	ButtonTextures[self].PushedTexture = LoadImage(self._Win._Rdr,texturePath)
 end
 
 function ButtonFunctions.SetHighlightTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].HighlightTexture = LoadImage(self._Win.Rdr,texturePath)
+	ButtonTextures[self].HighlightTexture = LoadImage(self._Win._Rdr,texturePath)
 end
 
 function ButtonFunctions.SetDisabledTexture(self,texturePath)
 	CheckFile(texturePath)
-	ButtonTextures[self].DisabledTexture = LoadImage(self._Win.Rdr,texturePath)
+	ButtonTextures[self].DisabledTexture = LoadImage(self._Win._Rdr,texturePath)
+end
+
+function ButtonFunctions.LockHighlight(self)
+	self._Win._update = true
+	self._texture = ButtonTextures[self].HighlightTexture
+	self._highlock = true
+end
+
+function ButtonFunctions.UnlockHighlight(self)
+	if self:IsMouseOver() == false then
+		self._Win._update = true
+		self._texture = ButtonTextures[self].NormalTexture
+	end
+	self._highlock = false
+end
+
+function ButtonFunctions.GetHighlightlock(self)
+	return self._highlock
 end
 
 function ButtonFunctions.SetText(self,text)
+	self._Win._update = true
 	if not(self._Text) then
 		self._Text = CreateFrame("Text",self._Win, self._Layer)
 		self._Text:SetPoint("CENTER",self,"CENTER")
@@ -445,8 +502,8 @@ local function UpdateFont(self)
 	if self._Fonttext == "" then self._Fonttext = " " end
 	local fw, fh = self._Font:sizeUtf8(self._Fonttext)
 	local surface = self._Font:renderUtf8(self._Fonttext,"blended",self._Fontcolor)
-	self._Win.update = true
-	self._texture = self._Win.Rdr:createTextureFromSurface(surface)
+	self._Win._update = true
+	self._texture = self._Win._Rdr:createTextureFromSurface(surface)
 	if not(self._crop) then
 		self._width, self._height = fw, fh
 	else
@@ -468,7 +525,7 @@ local function UpdateFont(self)
 end
 
 local function RemakeFont(self)
-	self.Font = ttf.open(self._Fonttype,self._Fontsize)
+	self._Font = ttf.open(self._Fonttype,self._Fontsize)
 	return UpdateFont(self)
 end
 
@@ -489,7 +546,7 @@ function FontFunctions.SetColor(self,color,g,b,a)
 end
 
 function FontFunctions.SetSize(self, size,x,y)
-	self.Fontsize = size
+	self._Fontsize = size
 	if x and y then
 		self._crop = {x=0, y=0, w=x,h=y}
 	else
@@ -517,6 +574,12 @@ function EditBoxWEvents.OnClick(self,...)
 	end
 end
 
+function EditBoxWEvents.OnValueChanged(self,...)
+	if UserWEvents[self].OnValueChanged then
+		return UserWEvents[self].OnValueChanged(self,self._Text:GetText(),...)
+	end
+end
+
 --TODO add changing mousepointer when mousing over
 -------Functions----------
 local function InitText(self,Window,Layer)
@@ -525,9 +588,10 @@ local function InitText(self,Window,Layer)
 	self._Text:Show()
 end
 
-function EditBoxFunctions.SetText(self,text)
-	self._Text:SetText(text)
-end
+--function EditBoxFunctions.SetText(self,text)
+	--self._Text:SetText(text)
+	--PushEvent("OnValueChanged",self)
+--end
 
 function EditBoxFunctions.SetInputFilter(self,filter)
 	self._InputFilter = filter
@@ -538,10 +602,11 @@ function EditBoxFunctions.SetTextFormat(self,filter)
 end
 
 function EditBoxFunctions.GetText(self)
-	return self.Text:GetText()
+	return self._Text:GetText()
 end
 
 function EditBoxFunctions.SetSize(self, width, height)
+	self._Win._update = true
 	self._width = width
 	self._height = height
 	if pointData[self].point then
@@ -555,19 +620,22 @@ function EditBoxFunctions.SetTextSize(self,size)
 end
 
 function EditBoxFunctions.SetPoint(self,point,...)
+	self._Win._update = true
 	local x, y = CommonFunctions.SetPoint(self,point,...)
 	self._Text:SetPoint("LEFT",self,"LEFT", 1)
 end
 
 function EditBoxFunctions.SetTexture(self, imgpath)
 	CheckFile(imgpath)
-	self._Win.update = true
-	self._texture = LoadImage(self._Win.Rdr,imgpath)
+	self._Win._update = true
+	self._texture = LoadImage(self._Win._Rdr,imgpath)
 end
 
 function EditBoxFunctions.SetText(self,text)
+	self._Win._update = true
 	self._String = tostring(text)
 	self._Text:SetText(text)
+	PushEvent("OnValueChanged",self)
 end
 
 function EditBoxFunctions.SetTranslate(self,A,B)
@@ -576,6 +644,7 @@ function EditBoxFunctions.SetTranslate(self,A,B)
 end
 
 function EditBoxFunctions.AddLetter(self,Char)
+	self._Win._update = true
 	if self._ChangeChar then
 		if self._ChangeChar[Char] then
 			Char = self._ChangeChar[Char]
@@ -604,6 +673,7 @@ function EditBoxFunctions.AddLetter(self,Char)
 end
 
 function EditBoxFunctions.RemoveFocus()
+	self._Win._update = true
 	ActiveEditBox=nil
 end
 local function NumSub(Text)
@@ -621,6 +691,7 @@ local function NumSub(Text)
 end
 
 function EditBoxFunctions.Backspace(self)
+	self._Win._update = true
 	local Len = self._String:len()
 	local Sub = 1
 	if Len >= 2 then
@@ -639,45 +710,39 @@ function Framemeta:__tostring()
 end
 
 function Framemeta:__newindex(key,value)
-	if key:sub(1,2)=="_" then
+	if key:sub(1,1)=="_" then
 		Frames[self][key] = value
 	else
 		rawset(self,key,value)
 	end
 end
 
-local Ignore ={
-	_crop = true,
-	_shown = true,
-	_Text= true,
-	_ChangeChar= true,
-	_Draw= true,
-	_Pshow= true,
-	_texheight = true,
-	_texwidth = true,
-	_width = true,
-}
 
 function Framemeta:__index(key)
-	if key:sub(1,2) == "_" then
+	if key:sub(1,1) == "_" then
 		return Frames[self][key]
 	else
-		if not(Ignore[key]) then
-			--error("Key: "..key)
-		end
 		return nil
 	end
 end
 
-local Types = {Frame = true, Button = true, Video = true, Text = true, EditBox = true, Square = true}
+local Types = {
+	Frame = true,
+	Button = true,
+	Video = true, 
+	Text = true, 
+	EditBox = true, 
+	Square = true
+}
 
 -----------"Public"-------
-function CreateFrame(Type, Window, Layer)
+function CreateFrame(Type, Window, Layer,extra)
 	assert(Type,"Argument #1 missing")
 	assert(Types[Type],"Invalid typen in #1")
 	assert(Window, "Argument #2 Window, missing")
-	assert(Window.Layer[Layer], "Invalid layer")
+	assert(Window._Layer[Layer], "Invalid layer")
 	local Frame = setmetatable({},Framemeta)
+	Frames[Frame] = {}
 	Frame._width = 0
 	Frame._height = 0
 	Frame._x = 0
@@ -697,7 +762,7 @@ function CreateFrame(Type, Window, Layer)
 	--Put in the window
 	Frame._Layer = Layer
 	Frame._Win = Window
-	table.insert(Frame._Win.Layer[Frame._Layer],Frame)
+	table.insert(Frame._Win._Layer[Frame._Layer],Frame)
 	----Frame specific stuff
 	if Type == "Frame" then
 		for k,v in pairs(FrameFunctions) do
@@ -713,7 +778,7 @@ function CreateFrame(Type, Window, Layer)
 		end
 		ButtonTextures[Frame] = {}
 	elseif Type == "Video" then	
-		Frame.UpdatePos = UpdatePoint
+		Frame._updatePos = UpdatePoint
 		Frame.Preload = PrepareVideo
 	elseif Type == "Text" then
 		Frame._Fonttype = "Fonts/DejaVuSans.ttf"
@@ -734,7 +799,9 @@ function CreateFrame(Type, Window, Layer)
 		for k,v in pairs(EditBoxWEvents) do
 			HiddenWEvents[Frame][k] = v
 		end
-		Frame:SetTexture("Textures/EditBox.png")
+		if extra then
+			Frame:SetTexture(extra)
+		end
 		InitText(Frame, Window, Layer)
 	elseif Type == "Square" then
 		Frame._Draw = "drawRect"
