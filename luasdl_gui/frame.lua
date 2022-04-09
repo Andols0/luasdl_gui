@@ -1,14 +1,18 @@
 local image = require("SDL.image")
 local ttf = require("SDL.ttf")
+local SDL	= require "SDL"
+local core = require("luasdl_gui.core")
+local rw = require("luasdl_gui.imagerw")
 local PrepareVideo = require("luasdl_gui.video")
-tinsert, tremove = table.insert, table.remove
-local formats, ret, err = image.init { image.flags.PNG }
+local FRAME = {}
+local tinsert, tremove = table.insert, table.remove
+local formats, ret, err = image.init { image.flags.PNG, image.flags.JPG }
 
 if not formats[image.flags.PNG] then
-	error(err)
+	error(err,ret)
 end
 
-local ret, err = ttf.init()
+ret, err = ttf.init()
 if not ret then
 	error(err)
   end
@@ -25,6 +29,7 @@ local ButtonFunctions, ButtonWEvents = {}, {}
 local FontFunctions = {}
 local EditBoxFunctions, EditBoxWEvents = {}, {}
 local DrawSquareFunctions = {}
+local DrawLineFunctions = {}
 
 local HiddenWEvents, UserWEvents = {}, {}
 
@@ -32,26 +37,53 @@ local ButtonTextures = {}
 local pointData = {}
 local Children = {}
 
+
+local TextureCache = {}
 local function LoadImage(rdr,path)
-	local img, ret = image.load(path)
+	local img, err = image.load(path)
 	if not img then
 		error(err)
 	end
 	local tex = rdr:createTextureFromSurface(img)
+	TextureCache[path] = tex
 	return tex
+end
+
+local function LoadrawImage(rdr,data)
+	rw:write(data)
+	local img, err = image.load_RW(rw)
+	if not img then
+		error(err)
+	end
+	local tex = rdr:createTextureFromSurface(img)
+	TextureCache[data] = tex
+	return tex
+end
+
+local function CreateTexture(rdr,texturePath,raw)
+	if TextureCache[texturePath] then
+		return TextureCache[texturePath]
+	end
+	if raw then
+		return LoadrawImage(rdr,texturePath)
+	else
+		core.CheckFile(texturePath)
+		return LoadImage(rdr,texturePath)
+	end
 end
 
 local function GetParentData(Parent)
 	local Data = pointData[Parent]
 	local point = Data.point
-	local Basex = Data.Basex or 0
-	local Basey = Data.Basey or 0
+	--local Basex = Data.Basex or 0
+	--local Basey = Data.Basey or 0
 	local width = Parent._width
 	local height = Parent._height
 	local x, y = Parent._x, Parent._y
-	if point == "TOPLEFT" then --Set base x and y depending on the anchor point
+	--if point == "TOPLEFT" then --Set base x and y depending on the anchor point
 		--Is already the correct
-	elseif point == "TOP" then
+	--else
+	if point == "TOP" then
 		x = x --+ width/2
 		y = y
 	elseif point == "TOPRIGHT" then
@@ -161,21 +193,21 @@ local function UpdatePoint(self)
 end
 
 -------------Event Shit-----------------------
-function PushEvent(event,Frame,...)
+local function PushEvent(event,frame,...)
 	--print("EventPushed",event,Frame)
-	if HiddenWEvents[Frame][event] then
-		HiddenWEvents[Frame][event](Frame,...)
+	if HiddenWEvents[frame][event] then
+		HiddenWEvents[frame][event](frame,...)
 	end
 end
 
-function PushChar(char)
-	if ActiveEditBox then
+local function PushChar(Win,char)
+	if Win._ActiveEditBox then
 		if char=="Backspace" then
-			ActiveEditBox:Backspace()
+			Win._ActiveEditBox:Backspace()
 		elseif char=="Escape" then
-			ActiveEditBox=nil
+			Win._ActiveEditBox=nil
 		else
-			ActiveEditBox:AddLetter(char)
+			Win._ActiveEditBox:AddLetter(char)
 		end
 	end
 end
@@ -189,13 +221,44 @@ function CommonFunctions.SetSize(self, width, height)
 	end
 end
 
+function CommonFunctions.GetSize(self)
+	return self._width, self._height
+end
+
 function CommonFunctions.SetAlpha(self,alpha)
 	self._Win._update = true
-	self._texture:setAlphaMod(alpha*255)
+	if alpha <= 1 then
+		alpha = alpha * 255
+	end
+	self._texture:setAlphaMod(alpha)
+end
+
+local function ShowChildren(kids)
+	for _,v in pairs(kids) do
+		if v._Pshow and not(v._shown) then
+			v._shown = true
+			PushEvent("OnShow",v)
+		end
+		if Children[v] and v._Pshow then
+			ShowChildren(Children[v])
+		end
+	end
+end
+
+local function HideChildren(kids)
+	for _,v in pairs(kids) do
+		if v._Pshow and v._shown then
+			v._shown = false
+			PushEvent("OnHide",v)
+		end
+		if Children[v] then
+			HideChildren(Children[v])
+		end
+	end
 end
 
 function CommonFunctions.SetPoint(self, point, arg1, arg2, arg3, arg4)
-	local relativeTo, relativePoint, ofsx, ofsy,x,y
+	local relativeTo, relativePoint, ofsx, ofsy
 	local relto = pointData[self].relativeTo
 	self._Win._update = true
 	if type(tonumber(arg1))=="number" then
@@ -250,33 +313,11 @@ function CommonFunctions.SetPoint(self, point, arg1, arg2, arg3, arg4)
 	return self._x, self._y
 end
 
-function ShowChildren(kids)
-	for _,v in pairs(kids) do
-		if v._Pshow and not(v._shown) then
-			v._shown = true
-			PushEvent("OnShow",v)
-		end
-		if Children[v] and v._Pshow then
-			ShowChildren(Children[v])
-		end
-	end
-end
 
-function HideChildren(kids)
-	for _,v in pairs(kids) do
-		if v._Pshow and v._shown then
-			v._shown = false
-			PushEvent("OnHide",v)
-		end
-		if Children[v] then
-			HideChildren(Children[v])
-		end
-	end
-end
 -------------------Common functions---------------
 function CommonFunctions.Show(self)
 	self._Win._update = true
-	self._Pshow = true --If parent is changed to shown show this frame.
+	self._Pshow = true --If parent is changed to shown show this frame
 	--Show if there is no parent or if parent is shown
 	if not(pointData[self].relativeTo) or (pointData[self].relativeTo and pointData[self].relativeTo._shown) then
 		self._shown = true
@@ -351,7 +392,7 @@ function CommonWEvents.OnHide(self,...)
 end
 
 ------------Square Functions-------------
-function DrawSquareFunctions.SetAlpha(self)
+function DrawSquareFunctions.SetAlpha()
 	--Can't do this
 end
 
@@ -374,10 +415,12 @@ end
 function DrawSquareFunctions.SetColor(self,color,g,b,a)
 	self._Win._update = true
 	if g then
-		a=a or 255
+		a = a or 255
 		self._color = {r = color, g = g, b = b, a = a}
+	elseif type(color) == "table" then
+		color.a = color.a or 255
+		self._color = color
 	else
-		if not color.a then color.a=255 end
 		self._color = color
 	end
 end
@@ -391,11 +434,61 @@ function DrawSquareFunctions.Filled(self, status)
 	end
 end
 
-------------Frame functions--------------
-function FrameFunctions.SetTexture(self,texturePath)
-	CheckFile(texturePath)
+------------Line functions---------------
+
+function DrawLineFunctions.SetStartPos(self,...)
+	local x, y = CommonFunctions.SetPoint(self,...)
+	self._obj.x1 = x
+	self._obj.y1 = y
+end
+
+function DrawLineFunctions.SetEndPos(self,...)
+	local x, y = CommonFunctions.SetPoint(self,...)
+	self._obj.x2 = x
+	self._obj.y2 = y
+end
+
+function DrawLineFunctions.SetColor(self,color,g,b,a)
 	self._Win._update = true
-	self._texture, err = LoadImage(self._Win._Rdr,texturePath)
+	if g then
+		a = a or 255
+		self._color = {r = color, g = g, b = b, a = a}
+	elseif type(color) == "table" then
+		color.a = color.a or 255
+		self._color = color
+	else
+		self._color = color
+	end
+end
+------------Frame functions--------------
+function FrameFunctions.SetTexture(self,texturePath,raw)
+	self._texture = CreateTexture(self._Win._Rdr,texturePath,raw)
+	self._angle = 0
+	self._flip = SDL.rendererFlip.None
+	self._Win._update = true
+end
+
+function FrameFunctions.SetRotation(self, angle)
+	if self._texture then
+		self._angle = angle
+		self._Win._update = true
+	end
+end
+
+function FrameFunctions.SetFlip(self, horizontal, vertical)
+	if horizontal and vertical then
+		error("Can't flip both vertical and horizontal")
+	end
+	if self._texture then
+		if horizontal then
+			self._flip = SDL.rendererFlip.Horizontal
+		elseif vertical then
+			self._flip = SDL.rendererFlip.Vertical
+		else
+			self._flip = SDL.rendererFlip.None
+		end
+		self._Win._update = true
+	end
 end
 
 ------------Button Widget Events---------
@@ -434,28 +527,24 @@ end
 ------------Button Functions------------
 
 
-function ButtonFunctions.SetNormalTexture(self,texturePath)
-	CheckFile(texturePath)
-	ButtonTextures[self].NormalTexture = LoadImage(self._Win._Rdr,texturePath)
+function ButtonFunctions.SetNormalTexture(self,texturePath,raw)
+	ButtonTextures[self].NormalTexture = CreateTexture(self._Win._Rdr,texturePath,raw)
 	self._Win._update = true
 	self._texture = ButtonTextures[self].NormalTexture
 end
 
 
 
-function ButtonFunctions.SetPushedTexture(self,texturePath)
-	CheckFile(texturePath)
-	ButtonTextures[self].PushedTexture = LoadImage(self._Win._Rdr,texturePath)
+function ButtonFunctions.SetPushedTexture(self,texturePath,raw)
+	ButtonTextures[self].PushedTexture = CreateTexture(self._Win._Rdr,texturePath,raw)
 end
 
-function ButtonFunctions.SetHighlightTexture(self,texturePath)
-	CheckFile(texturePath)
-	ButtonTextures[self].HighlightTexture = LoadImage(self._Win._Rdr,texturePath)
+function ButtonFunctions.SetHighlightTexture(self,texturePath,raw)
+	ButtonTextures[self].HighlightTexture = CreateTexture(self._Win._Rdr,texturePath,raw)
 end
 
-function ButtonFunctions.SetDisabledTexture(self,texturePath)
-	CheckFile(texturePath)
-	ButtonTextures[self].DisabledTexture = LoadImage(self._Win._Rdr,texturePath)
+function ButtonFunctions.SetDisabledTexture(self,texturePath,raw)
+	ButtonTextures[self].DisabledTexture = CreateTexture(self._Win._Rdr,texturePath,raw)
 end
 
 function ButtonFunctions.LockHighlight(self)
@@ -476,10 +565,25 @@ function ButtonFunctions.GetHighlightlock(self)
 	return self._highlock
 end
 
+function ButtonFunctions.SetEnabled(self,status)
+	self:EnableMouse(status)
+	if status == false then
+		if ButtonTextures[self].DisabledTexture and not(self._highlock) then
+			self._Win._update = true
+			self._texture = ButtonTextures[self].DisabledTexture
+		end
+	elseif status == true then
+		if ButtonTextures[self].NormalTexture and not(self._highlock) then
+			self._Win._update = true
+			self._texture = ButtonTextures[self].NormalTexture
+		end
+	end
+end
+
 function ButtonFunctions.SetText(self,text)
 	self._Win._update = true
 	if not(self._Text) then
-		self._Text = CreateFrame("Text",self._Win, self._Layer)
+		self._Text = FRAME.CreateFrame(self._Win, "Text", self._Layer)
 		self._Text:SetPoint("CENTER",self,"CENTER")
 		self._Text:SetText(text)
 		self._Text:Show()
@@ -489,10 +593,22 @@ function ButtonFunctions.SetText(self,text)
 end
 
 function ButtonFunctions.SetTextSize(self,...)
+	assert(self._Text, "You need to set a text before you can modifiy it")
 	self._Text:SetSize(...)
 end
 
+function ButtonFunctions.SetTextFont(self,...)
+	assert(self._Text, "You need to set a text before you can modifiy it")
+	self._Text:SetFont(...)
+end
+
+function ButtonFunctions.SetTextColor(self,...)
+	assert(self._Text, "You need to set a text before you can modifiy it")
+	self._Text:SetColor(...)
+end
+
 function ButtonFunctions.SetTextPoint(self,...)
+	assert(self._Text, "You need to set a text before you can modifiy it")
 	self._Text:SetPoint(...)
 end
 -----------Font functions---------------
@@ -567,7 +683,7 @@ end
 -----------Edit Box-------
 -------Events-------------
 function EditBoxWEvents.OnClick(self,...)
-	ActiveEditBox=self
+	self._Win._ActiveEditBox=self
 	--self:ActivateCursor()--------Todo!!
 	if UserWEvents[self].OnClick then
 		return UserWEvents[self].OnClick(self,...)
@@ -583,7 +699,7 @@ end
 --TODO add changing mousepointer when mousing over
 -------Functions----------
 local function InitText(self,Window,Layer)
-	self._Text = CreateFrame("Text",Window,Layer)
+	self._Text = FRAME.CreateFrame(Window, "Text", Layer)
 	self._Text:SetText("")
 	self._Text:Show()
 end
@@ -621,14 +737,14 @@ end
 
 function EditBoxFunctions.SetPoint(self,point,...)
 	self._Win._update = true
-	local x, y = CommonFunctions.SetPoint(self,point,...)
+	CommonFunctions.SetPoint(self,point,...)
 	self._Text:SetPoint("LEFT",self,"LEFT", 1)
 end
 
 function EditBoxFunctions.SetTexture(self, imgpath)
-	CheckFile(imgpath)
+	core.CheckFile(imgpath)
 	self._Win._update = true
-	self._texture = LoadImage(self._Win._Rdr,imgpath)
+	self._texture = CreateTexture(self._Win._Rdr,imgpath,raw)
 end
 
 function EditBoxFunctions.SetText(self,text)
@@ -672,9 +788,9 @@ function EditBoxFunctions.AddLetter(self,Char)
 	--end
 end
 
-function EditBoxFunctions.RemoveFocus()
+function EditBoxFunctions.RemoveFocus(self)
 	self._Win._update = true
-	ActiveEditBox=nil
+	self._Win._ActiveEditBox=nil
 end
 local function NumSub(Text)
 	for i=#Text, 1, -1 do
@@ -729,18 +845,23 @@ end
 local Types = {
 	Frame = true,
 	Button = true,
-	Video = true, 
-	Text = true, 
-	EditBox = true, 
-	Square = true
+	Video = true,
+	Text = true,
+	EditBox = true,
+	Square = true,
+	Line = true
 }
 
 -----------"Public"-------
-function CreateFrame(Type, Window, Layer,extra)
+function FRAME.CreateFrame(Window,Type, Layer, extra)
 	assert(Type,"Argument #1 missing")
 	assert(Types[Type],"Invalid typen in #1")
-	assert(Window, "Argument #2 Window, missing")
+	--assert(Window, "Argument #2 Window, missing")
 	assert(Window._Layer[Layer], "Invalid layer")
+	Window.PushEvent = PushEvent
+	Window._Layer[Layer].PushEvent = PushEvent
+	Window.PushChar = PushChar
+	Window._Layer[Layer].PushChar = PushChar
 	local Frame = setmetatable({},Framemeta)
 	Frames[Frame] = {}
 	Frame._width = 0
@@ -750,7 +871,6 @@ function CreateFrame(Type, Window, Layer,extra)
 	Frame._Type = Type
 	Frame._MouseEnabled = false
 	Typetable[Frame] = Type
-	if Queue then Frame.Queue = Queue end
 	--Populate Hidden events and common functions--
 	HiddenWEvents[Frame] = {}
 	for k,v in pairs(CommonWEvents) do
@@ -777,8 +897,8 @@ function CreateFrame(Type, Window, Layer,extra)
 			HiddenWEvents[Frame][k] = v
 		end
 		ButtonTextures[Frame] = {}
-	elseif Type == "Video" then	
-		Frame._updatePos = UpdatePoint
+	elseif Type == "Video" then
+		Frame._UpdatePos = UpdatePoint
 		Frame.Preload = PrepareVideo
 	elseif Type == "Text" then
 		Frame._Fonttype = "Fonts/DejaVuSans.ttf"
@@ -805,9 +925,16 @@ function CreateFrame(Type, Window, Layer,extra)
 		InitText(Frame, Window, Layer)
 	elseif Type == "Square" then
 		Frame._Draw = "drawRect"
-		Frame._color = 0x000000FF
+		Frame._color = {r=0,g=0,b=0,a=255}
 		Frame._obj = { w = 0, h = 0, x = 0, y = 0}
 		for k,v in pairs(DrawSquareFunctions) do
+			Frame[k] = v
+		end
+	elseif Type == "Line" then
+		Frame._Draw = "drawLine"
+		Frame._color = {r=0,g=0,b=0,a=255}
+		Frame._obj = {x1 = 0, x2 = 0, y1 = 0, y2 = 0 }
+		for k,v in pairs(DrawLineFunctions) do
 			Frame[k] = v
 		end
 	end
@@ -821,4 +948,4 @@ function CreateFrame(Type, Window, Layer,extra)
 	return Frame
 end
 
-return Frames
+return FRAME.CreateFrame

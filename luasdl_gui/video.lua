@@ -1,5 +1,6 @@
-local socket = require("socket")
 local SDL = require("SDL")
+local core = require("luasdl_gui.core")
+local audio = require("luasdl_gui.audio")
 
 local function VideoMeta()
 	local SDL = require("SDL")
@@ -20,7 +21,7 @@ local function VideoMeta()
 		ffprobe:close()
 		local A,B = framestring:match("(%d+)/(%d+)")
 		Meta.framerate = A/B
-		Meta.frametime = 1/Meta.framerate
+		Meta.frametime = 1000/Meta.framerate
 		--Get the duration
 		---har ändrat stream till format på raden nedan OBS!!
 		ffprobe = io.popen('ffprobe -v error -show_entries format=duration -of csv=s=x:p=0 "'..filepath..'"')
@@ -80,7 +81,7 @@ function VideoFunctions.Start(self)
 		print(string.format("Starting video for the: %d time",asd))
 		self:Show()
 		self._started=true
-		AddToQueue(0,self.GetFrame,self)
+		core.after(0,self.GetFrame,self)
 		--table.insert(self.Queue,1,{t=0,cb=self.GetFrame,args=self})
 	end
 end
@@ -93,9 +94,9 @@ function VideoFunctions.Stop(self)
 	ActiveVideos[self] = nil
 	self._NextStop = true
 	if self._Audio.Dev then
-		print(#self.Queue)
-		AddToQueue(socket.gettime()+1, OneAudioCycle,self)
-		--table.insert(self.Queue,2,{t=socket.gettime()+1,cb=OneAudioCycle,args = self})
+		--print(#self.Queue)
+		core.after(1000, OneAudioCycle,self)
+		--table.insert(self.Queue,2,{t=1000,cb=OneAudioCycle,args = self})
 	end
 	--self.texture=nil
 	self._Stream:close()
@@ -113,7 +114,7 @@ function VideoFunctions.Pause(self)
 end
 
 function VideoFunctions.Resume(self)
-	local now = socket.gettime()
+	local now = SDL.getTicks()
 	self._Paused = false
 	self._Resuming = true
 	self._Starttime = now - (self._currentframe*self._frametime)
@@ -127,37 +128,38 @@ end
 function VideoFunctions.GetDuration(self)
 	return self._duration
 end
-
+questart = 0
 function VideoFunctions.GetFrame(self)
+	afterqueue = SDL.getTicks()
 	local err, Data
 	if self._NextStop or self._Paused then self._NextStop = false return end--Stop it
 
 	if self._currentframe == 0 then
 		self._resuming = true
-		self._Starttime = socket.gettime()
+		self._Starttime = SDL.getTicks()
 		if self._Audio.Dev then
 			self._Audio.Dev:pause(false)
 		end
 	end
 	self._currentframe = self._currentframe + 1
-	--if self.currentframe % 100 == 0 then
-		--print("Video memory: ",collectgarbage("count"))
-	--end
+	if self._currentframe % 100 == 0 then
+		print("Video memory: ",collectgarbage("count"))
+	end
 	if self._currentframe <= self._numframes then
-		if self._currentframe > self._framerate+1 and math.floor(self._currentframe*self._frametime) % 20 == 0 then
+		--if self._currentframe > self._framerate+1 and math.floor(self._currentframe*self._frametime) % 20 == 0 then
+		if self._currentframe > self._framerate + 1 and self._currentframe % 100 == 0 then
 			if not(send) then
-				self._Audio.Channel:push({"Time",self._currentframe*self._frametime})
-				print("Video memory: ",collectgarbage("count")/1024)
+				self._Audio.Channel:push({"Time",self._currentframe*self._frametime/1000})
+				--print("Video memory: ",collectgarbage("count")/1024)
 				send = true
 			end
 		else
 			send = false
 		end
 
-		--print("VidTime",math.floor(self.currentframe*self.frametime*100)/100)
 		Data = self._Stream:read(self._framesize)
-		if Data then 
-			self._Win.update = true
+		if Data then
+			self._Win._update = true
 			self._texture:lock(Data,self._pitch)
 			self._texture:unlock()
 		end
@@ -173,11 +175,11 @@ function VideoFunctions.GetFrame(self)
 		self:Hide()
 		self._Stream:close()
 		if self._Audio.Dev then
-			--AddToQueue(self.Queue,socket.gettime()+1,self.AudioDev.close,self.AudioDev)
+			--AddToQueue(self.Queue,1000,self.AudioDev.close,self.AudioDev)
 			print("Stopping audio")
 			self._Audio.Dev:pause(true)
 		end
-		return AddToQueue(socket.gettime()+1,self.Reload,self)
+		return core.after(1000,self.Reload,self)
 	end
 	--self:Pause()
 	if self._Resuming then
@@ -186,8 +188,17 @@ function VideoFunctions.GetFrame(self)
 		end
 		self._Resuming = false
 	end
-	local Nextframe = self._Starttime + (self._currentframe+1)*(1/self._framerate)
-	return AddToQueue(Nextframe,self.GetFrame,self)
+	local Nextframe = self._Starttime - SDL.getTicks() + (self._currentframe + 1)*(self._frametime)
+
+
+	--local Nextframe1 = (self._currentframe + 1)*self._frametime*1000 - SDL.getTicks() - self._Starttime
+
+	--[[local VidTime = math.floor(self._currentframe*self._frametime/10)/100
+	local RealTime = math.floor((SDL.getTicks() - self._Starttime)/10)/100
+	print("Vid, Real, Diff",VidTime, RealTime, math.floor((VidTime-RealTime)*10)/10, Nextframe, afterqueue-questart)]]
+
+	questart = SDL.getTicks()
+	return core.after(Nextframe,self.GetFrame,self)
 end
 
 function VideoFunctions.Load(self)
@@ -258,7 +269,7 @@ local function PrepareVideo(channel,self,filepath,audiopath)
 		Video[k] = v
 	end
 
-	Video:UpdatePos()
+	Video:_UpdatePos()
 	if Video._WaitLoad and not Video._WaitStart then
 		Video._WaitLoad=nil
 		Video:Load()
@@ -272,7 +283,7 @@ local function PrepareVideo(channel,self,filepath,audiopath)
 end
 
 local function Out(self,filepath,audiopath)
-	CreateCallback("VideoMeta",VideoMeta ,PrepareVideo,nil,self,filepath,audiopath)
+	core.CreateCallback("VideoMeta",VideoMeta ,PrepareVideo,nil,self,filepath,audiopath)
 end
 
 return Out

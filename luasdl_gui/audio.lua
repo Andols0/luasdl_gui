@@ -1,4 +1,5 @@
 local SDL = require("SDL")
+local Core = require("luasdl_gui.core")
 local Processfile
 function AudioMeta()
 	local SDL = require("SDL")
@@ -121,6 +122,6 @@ end
 
 function CreateAudio(Path,Sample,Channels)
 	local Audio = {}
-	CreateCallback("AudioMeta",AudioMeta,Create,nil,Audio,Path,Sample,Channels)
+	Core.CreateCallback("AudioMeta",AudioMeta,Create,nil,Audio,Path,Sample,Channels)
 	return Audio
 end

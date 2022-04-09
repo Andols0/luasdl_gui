@@ -3,7 +3,7 @@
 --
 print("Hello there!")
 local SDL	= require "SDL"
-require("socket")
+socket = require("socket")
 
 local args	= { ... }
 print(...)
@@ -37,39 +37,28 @@ print("Sound meta:", Info.Sample, Info.Channels)
 
 function Load()
 	print("Loading audio")
-	tid = socket.gettime()
+	tid = SDL.getTicks()
 	if open then
-		tid2=socket.gettime()
+		tid2=SDL.getTicks()
 		sound.stream:close()
-		print("closing took: "..socket.gettime()-tid2)
+		print("closing took: "..SDL.getTicks()-tid2)
 	end
 	sound.stream = io.popen('ffmpeg -i "'..path..'" -c:a pcm_s16le -f s16le pipe:1 -loglevel warning',"rb")
 	stop = false
 	open = true
 	TotalBytes=0
-	print("Loading audio stream took: "..socket.gettime()-tid)
+	print("Loading audio stream took: "..SDL.getTicks()-tid)
 end
 
 Load()
 
 
-endtime = socket.gettime()
+endtime = SDL.getTicks()
 local slowing
-
 return function (length)
 	local data = ""
-	--print("AudTime: ",math.floor(TotalBytes/(96000*2)*1000)/1000)
-	starttime = socket.gettime()
-	--print("Time between call: ",socket.gettime()-endtime)
-	--print(channelnum,length)
-	--Garbage = Garbage + 1
-	--if Garbage == 200 then
-		--print("Audio memory: ",collectgarbage("count")/1024)
-		--Garbage =0
-	--end
-
 	local Msg = Filechannel:last()
-	if Msg ~="asd" then
+	if Msg ~= "asd" then
 		if Msg == "Restart" then
 			Load()
 			--Filechannel:pop()
@@ -79,14 +68,11 @@ return function (length)
 				print("Got new vol: ",Value)
 				Volume = math.floor(Value)
 			elseif Cmd == "Time" then
-				--print("Audio memory: ",collectgarbage("count")/1024)
-				--print("At videotime:",Value)
-				--print("Audiotime: ",TotalBytes/(EfSample))
+				print("Audio memory: ",collectgarbage("count")/1024)
 				local timediff = Value - TotalBytes/(EfSample)
-				--print("Diff in vid and audio: ",timediff)
 				if timediff > 0  then
 					local newtime = TotalBytes/(EfSample)
-					local trashdata = 0
+					local trashdata
 					local num = 0
 					while newtime < Value do
 						num = num + 1
@@ -94,15 +80,13 @@ return function (length)
 					end
 					if num >= 2 then
 						trashdata = length*(num-1)
-						TotalBytes = TotalBytes + trashdata 
-						local putitinthetrash = sound.stream:read(trashdata)
-						putitinthetrash = nil
+						TotalBytes = TotalBytes + trashdata
+						local _ = sound.stream:read(trashdata)
 						print("CORRECTING: ",num-1, "Samples")
 					end
 				end
 				if timediff < 0 then
 					local newtime = TotalBytes/(EfSample)
-					local trashdata = 0
 					local num = 0
 					while newtime > Value do
 						num = num + 1
@@ -165,7 +149,5 @@ return function (length)
 		data, err = SDL.mixAudioFormat(data,SDL.audioFormat.S16LSB, 6)
 	--	assert(data,err)
 	--end
-	endtime = socket.gettime()
-	--print("Lua audio process: ",socket.gettime()-starttime)
 	return data
 end
