@@ -3,7 +3,6 @@
 --
 print("Hello there!")
 local SDL	= require "SDL"
-socket = require("socket")
 
 local args	= { ... }
 print(...)
