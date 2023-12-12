@@ -593,7 +593,7 @@ function ButtonFunctions.SetText(self,text)
 end
 
 function ButtonFunctions.SetTextSize(self,...)
-	assert(self._Text, "You need to set a text before you can modifiy it")
+	assert(self._Text, "You need to set a tButtonFunctionsGetext before you can modifiy it")
 	self._Text:SetSize(...)
 end
 
@@ -610,6 +610,14 @@ end
 function ButtonFunctions.SetTextPoint(self,...)
 	assert(self._Text, "You need to set a text before you can modifiy it")
 	self._Text:SetPoint(...)
+end
+
+function ButtonFunctions.GetText(self)
+	if self._Text then
+		return self._Text:GetText()
+	else
+		return ""
+	end
 end
 -----------Font functions---------------
 
